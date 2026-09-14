@@ -165,6 +165,18 @@
             word-wrap: break-word;
         }
 
+        .typing-cursor {
+            display: inline-block;
+            color: var(--accent);
+            animation: blink 0.8s infinite;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
         .message-content pre {
             background: #0d0d14;
             border: 1px solid var(--border);
@@ -414,21 +426,33 @@
                 // Tạo khung tin nhắn AI và stream từng từ vào
                 const aiBubble = appendMessage('ai', '');
                 const contentEl = aiBubble.querySelector('.message-content');
+                contentEl.innerHTML = '<span class="typing-cursor">▋</span>';
                 let fullReply = '';
 
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder();
+                try {
+                    if (res.body && res.body.getReader) {
+                        const reader = res.body.getReader();
+                        const decoder = new TextDecoder();
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value, { stream: true });
-                    fullReply += chunk;
-                    contentEl.innerHTML = formatContent(fullReply);
-                    document.getElementById('chatContainer').scrollTop = document.getElementById('chatContainer').scrollHeight;
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            const chunk = decoder.decode(value, { stream: true });
+                            fullReply += chunk;
+                            contentEl.innerHTML = formatContent(fullReply) + '<span class="typing-cursor">▋</span>';
+                            document.getElementById('chatContainer').scrollTop = document.getElementById('chatContainer').scrollHeight;
+                        }
+                    } else {
+                        fullReply = await res.text();
+                    }
+                } catch (streamErr) {
+                    if (!fullReply) {
+                        fullReply = await res.text().catch(() => '');
+                    }
                 }
 
-                chatHistory.push({ role: 'assistant', content: fullReply });
+                contentEl.innerHTML = formatContent(fullReply.trim() || 'Xin chào! Tôi có thể giúp gì cho bạn?');
+                chatHistory.push({ role: 'assistant', content: fullReply.trim() });
 
             } catch (err) {
                 if (typingEl && typingEl.parentNode) typingEl.remove();
