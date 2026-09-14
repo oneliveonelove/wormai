@@ -356,9 +356,8 @@
     </div>
 
     <script>
-        // ═══ CONFIG ═══
-        // Backend API on your VPS — API key & system prompt stay server-side
-        const API_BASE = 'http://20.205.137.109/api';
+        // ═══ CONFIG CLOUDFLARE WORKERS AI ═══
+        const API_BASE = 'https://wormai-worker.lethiquochuy.workers.dev';
 
         let chatHistory = [];
         let isLoading = false;
@@ -369,7 +368,7 @@
                 const res = await fetch(`${API_BASE}/health`);
                 const data = await res.json();
                 document.getElementById('statusDot').classList.add('online');
-                document.getElementById('modelTag').textContent = data.model || 'connected';
+                document.getElementById('modelTag').textContent = "Nemotron (Cloudflare AI)";
             } catch (e) {
                 document.getElementById('statusDot').classList.add('error');
                 document.getElementById('modelTag').textContent = 'offline';
@@ -377,7 +376,7 @@
         }
         checkHealth();
 
-        // ═══ SEND MESSAGE ═══
+        // ═══ SEND MESSAGE WITH STREAMING ═══
         async function sendMessage() {
             const input = document.getElementById('userInput');
             const text = input.value.trim();
@@ -393,30 +392,46 @@
             input.value = '';
             autoResize(input);
 
-            // Show typing
+            // Show typing & create AI bubble for streaming
             isLoading = true;
             document.getElementById('sendBtn').disabled = true;
             const typingEl = showTyping();
 
             try {
-                const res = await fetch(`${API_BASE}/chat`, {
+                const res = await fetch(`${API_BASE}/api/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ messages: chatHistory })
                 });
 
+                typingEl.remove();
+
                 if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || 'API error');
+                    const errText = await res.text();
+                    throw new Error(errText || 'Workers AI Error');
                 }
 
-                const data = await res.json();
-                chatHistory.push({ role: 'assistant', content: data.reply });
-                typingEl.remove();
-                appendMessage('ai', data.reply);
+                // Tạo khung tin nhắn AI và stream từng từ vào
+                const aiBubble = appendMessage('ai', '');
+                const contentEl = aiBubble.querySelector('.message-content');
+                let fullReply = '';
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullReply += chunk;
+                    contentEl.innerHTML = formatContent(fullReply);
+                    document.getElementById('chatContainer').scrollTop = document.getElementById('chatContainer').scrollHeight;
+                }
+
+                chatHistory.push({ role: 'assistant', content: fullReply });
 
             } catch (err) {
-                typingEl.remove();
+                if (typingEl && typingEl.parentNode) typingEl.remove();
                 appendMessage('ai', `⚠️ Error: ${err.message}`);
             } finally {
                 isLoading = false;
